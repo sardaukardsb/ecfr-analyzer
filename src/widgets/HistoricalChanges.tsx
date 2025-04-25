@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Box, Input, Spinner, Text, Button, Alert, AlertIcon, AlertTitle, FormControl, FormLabel, Select } from '@chakra-ui/react';
 import axios from 'axios';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Label } from 'recharts';
 
 interface ChangePoint {
   date: string;
@@ -53,7 +53,7 @@ const HistoricalChanges = () => {
           if (query.trim().length > 0) {
             // Get date limit based on timeRange
             const now = new Date();
-            let limitDate = new Date();
+            let limitDate: Date | null = new Date();
             if (timeRange === '1month') {
               limitDate.setMonth(now.getMonth() - 1);
             } else if (timeRange === '6months') {
@@ -65,8 +65,11 @@ const HistoricalChanges = () => {
             }
             
             // Filter data by date
-            const limitDateStr = limitDate.toISOString().split('T')[0];
-            let filteredData = MOCK_DATA.filter(item => item.date >= limitDateStr);
+            let filteredData = MOCK_DATA;
+            if (timeRange !== 'all' && limitDate) {
+              const limitDateStr = limitDate.toISOString().split('T')[0];
+              filteredData = MOCK_DATA.filter(item => item.date >= limitDateStr);
+            }
             
             // Calculate "relevance" of search term for each data point
             // This simulates how different search terms would affect results
@@ -92,7 +95,7 @@ const HistoricalChanges = () => {
       
       // 2. Attempt primary endpoint: counts by date
       const now = new Date();
-      let startDate = new Date(now);
+      let startDate: Date | null = new Date(now);
       if (timeRange === '1month') startDate.setMonth(now.getMonth() - 1);
       else if (timeRange === '6months') startDate.setMonth(now.getMonth() - 6);
       else if (timeRange === '1year') startDate.setFullYear(now.getFullYear() - 1);
@@ -104,8 +107,10 @@ const HistoricalChanges = () => {
         const res = await axios.get('/api/search/v1/counts/daily', {
           params: {
             query: query.trim() || '*',
-            last_modified_on_or_after: fmt(startDate),
-            last_modified_on_or_before: fmt(now),
+            ...(timeRange !== 'all' && startDate && {
+              last_modified_on_or_after: fmt(startDate),
+              last_modified_on_or_before: fmt(now),
+            }),
           },
         });
 
@@ -129,8 +134,10 @@ const HistoricalChanges = () => {
         const res = await axios.get('/api/search/v1/summary', {
           params: {
             query: query.trim() || '*',
-            last_modified_on_or_after: fmt(startDate),
-            last_modified_on_or_before: fmt(now),
+            ...(timeRange !== 'all' && startDate && {
+              last_modified_on_or_after: fmt(startDate),
+              last_modified_on_or_before: fmt(now),
+            }),
           },
         });
 
@@ -159,7 +166,7 @@ const HistoricalChanges = () => {
       
       // Generate mock data based on search term
       const now = new Date();
-      let limitDate = new Date();
+      let limitDate: Date | null = new Date();
       if (timeRange === '1month') {
         limitDate.setMonth(now.getMonth() - 1);
       } else if (timeRange === '6months') {
@@ -171,8 +178,11 @@ const HistoricalChanges = () => {
       }
       
       // Filter data by date
-      const limitDateStr = limitDate.toISOString().split('T')[0];
-      let filteredData = MOCK_DATA.filter(item => item.date >= limitDateStr);
+      let filteredData = MOCK_DATA;
+      if (timeRange !== 'all' && limitDate) {
+        const limitDateStr = limitDate.toISOString().split('T')[0];
+        filteredData = MOCK_DATA.filter(item => item.date >= limitDateStr);
+      }
       
       // Calculate "relevance" based on query
       const queryRelevance = (query.length / 10) + 
@@ -205,7 +215,7 @@ const HistoricalChanges = () => {
         </Alert>
       )}
       
-      <Box display="flex" flexDirection={{ base: "column", md: "row" }} mb={4} gap={2}>
+      <Box display="flex" flexDirection={{ base: "column", md: "row" }} mb={2} gap={2}>
         <FormControl>
           <FormLabel htmlFor="searchQuery">Search Term</FormLabel>
           <Input 
@@ -228,6 +238,7 @@ const HistoricalChanges = () => {
             <option value="6months">Last 6 Months</option>
             <option value="1year">Last Year</option>
             <option value="5years">Last 5 Years</option>
+            <option value="all">All Time</option>
           </Select>
         </FormControl>
         
@@ -244,6 +255,13 @@ const HistoricalChanges = () => {
         </FormControl>
       </Box>
       
+      {timeRange === 'all' && (
+        <Alert status="warning" variant="subtle" bg="yellow.50" color="gray.700" fontSize="sm" mb={4}>
+          <AlertIcon boxSize={4} />
+          Note: the eCFR website was created around 2016-17. There may be a surge in data around that time.
+        </Alert>
+      )}
+      
       {loading ? (
         <Box display="flex" justifyContent="center" py={8}>
           <Spinner size="xl" />
@@ -256,8 +274,9 @@ const HistoricalChanges = () => {
       ) : data.length ? (
         <Box>
           <Text mb={2} fontWeight="medium">Showing {data.length} data points for "{query}"</Text>
+          <Text fontWeight="semibold" mb={1}>Historical Term Usage</Text>
           <ResponsiveContainer width="100%" height={400}>
-            <LineChart data={data} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
+            <LineChart data={data} margin={{ top: 20, right: 30, left: 45, bottom: 30 }}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis 
                 dataKey="date"
@@ -265,9 +284,13 @@ const HistoricalChanges = () => {
                   // Shorten date format for x-axis
                   const date = new Date(tick);
                   return `${date.getMonth()+1}/${date.getFullYear().toString().substr(2,2)}`;
-                }}  
-              />
-              <YAxis />
+                }}
+              >
+                <Label value="Date" position="insideBottom" dy={10} />
+              </XAxis>
+              <YAxis>
+                <Label value="Results Count" angle={-90} position="insideLeft" dx={-10} />
+              </YAxis>
               <Tooltip 
                 formatter={(value) => [`${value} results`, 'Count']} 
                 labelFormatter={(label) => `Date: ${label}`} 

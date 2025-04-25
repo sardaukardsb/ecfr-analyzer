@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Box, Select, Spinner, Text, Alert, AlertIcon, AlertTitle } from '@chakra-ui/react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { Box, Select, Spinner, Text, Alert, AlertIcon, AlertTitle, Button, Flex, CloseButton } from '@chakra-ui/react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell, Label } from 'recharts';
 import axios from 'axios';
 
 interface Agency {
@@ -24,16 +24,16 @@ const MOCK_AGENCIES = [
   { name: 'Environmental Protection Agency', short_name: 'EPA', slug: 'environmental-protection-agency', display_name: 'Environmental Protection Agency' },
 ];
 
-// Use relative API paths with the Vite proxy
-// const API_BASE = 'https://www.ecfr.gov';
+const COLORS = ['#2C7A7B', '#D69E2E', '#805AD5', '#E53E3E', '#3182CE'];
 
 const WordCountPerAgency = () => {
   const [agencies, setAgencies] = useState<Agency[]>([]);
-  const [selected, setSelected] = useState<string>('');
+  const [selectedSlugs, setSelectedSlugs] = useState<string[]>(['']); // start with one selector
   const [data, setData] = useState<WordCountData[]>([]);
   const [loading, setLoading] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
   const [useMock, setUseMock] = useState(false);
+  const [countsCache, setCountsCache] = useState<Record<string, number>>({});
 
   useEffect(() => {
     const fetchAgencies = async () => {
@@ -57,17 +57,13 @@ const WordCountPerAgency = () => {
     fetchAgencies();
   }, []);
 
-  const fetchWordCounts = async (slug: string) => {
+  const fetchWordCount = async (slug: string): Promise<number> => {
     try {
-      setLoading(true);
-      
       if (useMock) {
         // Generate random word count for demo purposes
-        setTimeout(() => {
-          setData([{ agency: slug, wordCount: Math.floor(Math.random() * 50000) + 10000 }]);
-          setLoading(false);
-        }, 800);
-        return;
+        return new Promise(resolve => {
+          setTimeout(() => resolve(Math.floor(Math.random() * 50000) + 10000), 600);
+        });
       }
       
       // Use search count endpoint for each word (approximate). For demo, just get count of sections.
@@ -78,18 +74,51 @@ const WordCountPerAgency = () => {
         },
       });
       const count = searchRes.data?.count ?? Math.floor(Math.random() * 1000); // placeholder
-      setData([{ agency: slug, wordCount: count }]);
+      return count;
     } catch (err) {
       console.error(err);
-      // Fall back to mock data
-      setData([{ agency: slug, wordCount: Math.floor(Math.random() * 50000) + 10000 }]);
       if (!useMock) {
         setApiError("Could not fetch word count data. Using simulated data instead.");
         setUseMock(true);
       }
+      return Math.floor(Math.random() * 50000) + 10000; // mock fallback
+    }
+  };
+
+  const refreshData = async (slugs: string[]) => {
+    const uniqueSlugs = slugs.filter(s => s);
+    setLoading(true);
+    try {
+      // Prepare cache copy
+      let cache: Record<string, number> = { ...countsCache };
+
+      const slugsToFetch = uniqueSlugs.filter(slug => cache[slug] === undefined);
+      if (slugsToFetch.length) {
+        const fetchedCounts = await Promise.all(slugsToFetch.map(s => fetchWordCount(s)));
+        slugsToFetch.forEach((slug, idx) => {
+          cache[slug] = fetchedCounts[idx];
+        });
+        setCountsCache(cache);
+      }
+
+      const newData: WordCountData[] = uniqueSlugs.map(slug => ({ agency: slug, wordCount: cache[slug] }));
+      setData(newData);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleAgencyChange = (index: number, slug: string) => {
+    const updated = [...selectedSlugs];
+    updated[index] = slug;
+    setSelectedSlugs(updated);
+    refreshData(updated);
+  };
+
+  const removeAgency = (index: number) => {
+    const updated = selectedSlugs.filter((_, i) => i !== index);
+    setSelectedSlugs(updated.length ? updated : ['']);
+    refreshData(updated);
   };
 
   return (
@@ -101,33 +130,61 @@ const WordCountPerAgency = () => {
         </Alert>
       )}
       
-      <Select 
-        placeholder="Select agency" 
-        mb={4} 
-        onChange={e => {
-          setSelected(e.target.value);
-          fetchWordCounts(e.target.value);
-        }} 
-        value={selected}
-        isDisabled={loading}
-      >
-        {agencies.map(a => (
-          <option key={a.slug} value={a.slug}>{a.display_name ?? a.name}</option>
+      {/* Agency selectors */}
+      <Box mb={4}>
+        {selectedSlugs.map((slug, idx) => (
+          <Flex key={idx} align="center" mb={2}>
+            <Select
+              placeholder="Select agency"
+              value={slug}
+              isDisabled={loading}
+              onChange={e => handleAgencyChange(idx, e.target.value)}
+            >
+              {agencies.map(a => (
+                <option key={a.slug} value={a.slug}>{a.display_name ?? a.name}</option>
+              ))}
+            </Select>
+            {selectedSlugs.length > 1 && (
+              <CloseButton size="sm" ml={2} onClick={() => removeAgency(idx)} aria-label="Remove agency" />
+            )}
+          </Flex>
         ))}
-      </Select>
+        {selectedSlugs.length < 5 && (
+          <Button
+            onClick={() => setSelectedSlugs([...selectedSlugs, ''])}
+            colorScheme="teal"
+            size="sm"
+            variant="outline"
+            mt={2}
+          >
+            Add Agency
+          </Button>
+        )}
+      </Box>
 
       {loading ? (
         <Spinner />
       ) : data.length ? (
-        <ResponsiveContainer width="100%" height={400}>
-          <BarChart data={data} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" />
-            <XAxis dataKey="agency" />
-            <YAxis />
-            <Tooltip />
-            <Bar dataKey="wordCount" name="Word Count" fill="#2C7A7B" />
-          </BarChart>
-        </ResponsiveContainer>
+        <>
+          <Text fontWeight="semibold" mb={1}>Word Count Per Agency</Text>
+          <ResponsiveContainer width="100%" height={400}>
+            <BarChart data={data} margin={{ top: 20, right: 30, left: 60, bottom: 30 }}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="agency">
+                <Label value="Agency" position="insideBottom" dy={10} />
+              </XAxis>
+              <YAxis>
+                <Label value="Word Count" angle={-90} position="insideLeft" dx={-10} />
+              </YAxis>
+              <Tooltip />
+              <Bar dataKey="wordCount" name="Word Count">
+                {data.map((_, index) => (
+                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </>
       ) : (
         <Text>Select an agency to view word counts.</Text>
       )}
