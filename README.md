@@ -1,32 +1,49 @@
 # eCFR Analyzer
 
-A lightweight frontend web application to visualize analytics on the Electronic Code of Federal Regulations (eCFR).
+Interactive web dashboard that surfaces insights from the Electronic Code of Federal Regulations.
 
-Built with **React + TypeScript + Chakra UI + Vite**.
+## Features
 
-## Features (MVP)
+| Tab | What it does |
+|-----|--------------|
+| **Word Count per Agency** | Compare the total word-count of regulations issued by up to five agencies.
+| **Historical Term Usage** | Visualise how often a search term appears in the CFR over time.
+| **Historical Agency Changes** | Plot daily change counts for an agency over a chosen period.
+| **Bureaucracy Ranking** | Rank agencies by *word-count + all-time change count*.
 
-1. **Word Count Per Agency** – approximate count of regulatory text associated with a selected agency.
-2. **Historical Changes Over Time** – daily counts of occurrences for a search term, visualized as a line chart.
+> Tabs are listed left-to-right from most general to most analytical.
 
-## Setup
+### Data pipeline
+
+All data is fetched live from the official eCFR API (https://www.ecfr.gov).  In development Vite proxies `/api/**` to that domain (see `vite.config.ts`).
+In production (Vercel) the same paths are rewritten via `vercel.json`, keeping requests same-origin and avoiding CORS.
+
+No data is stored server-side – everything happens in the browser.
+
+### Navigation cheatsheet
+
+1. **Pick a tab** across the top.
+2. **Choose agencies / terms / date-range** via the controls that appear.
+3. Hover or click the charts for exact values.
+4. Hit **Refresh** buttons to re-query live data.
+
+### Local development
 
 ```bash
-# install deps
-pnpm install # or npm i / yarn
+npm install
+npm run dev  # open http://localhost:5173
+```
 
-# develop
-pnpm dev
+### Production build
 
-# build
-pnpm build
-``` 
+```bash
+npm run build
+npm run preview  # test production bundle locally
+```
 
-## Architecture Notes
+### Deployment
 
-- Uses eCFR REST API endpoints under `https://www.ecfr.gov`.
-- Axios for HTTP.
-- Recharts for basic charts.
-- Chakra UI for clean, responsive design.
+Push to `main` – Vercel Git integration auto-builds and deploys to **ecfr.danielbassett.com**.
 
-Feel free to fork and extend metrics – e.g. word frequency, section diffing, etc.
+---
+Made with React 18, Vite 5, TypeScript, Axios, Chakra UI & Recharts.

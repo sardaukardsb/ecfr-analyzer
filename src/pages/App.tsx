@@ -2,6 +2,7 @@ import { Tabs, TabList, TabPanels, Tab, TabPanel, Heading } from '@chakra-ui/rea
 import WordCountPerAgency from '../widgets/WordCountPerAgency';
 import HistoricalChanges from '../widgets/HistoricalChanges';
 import HistoricalAgencyChanges from '../widgets/HistoricalAgencyChanges';
+import BureaucracyRanking from '../widgets/BureaucracyRanking';
 
 const App = () => {
   return (
@@ -12,6 +13,7 @@ const App = () => {
           <Tab>Word Count per Agency</Tab>
           <Tab>Historical Term Usage</Tab>
           <Tab>Historical Agency Changes</Tab>
+          <Tab>Bureaucracy Ranking</Tab>
         </TabList>
 
         <TabPanels>
@@ -23,6 +25,9 @@ const App = () => {
           </TabPanel>
           <TabPanel>
             <HistoricalAgencyChanges />
+          </TabPanel>
+          <TabPanel>
+            <BureaucracyRanking />
           </TabPanel>
         </TabPanels>
       </Tabs>
