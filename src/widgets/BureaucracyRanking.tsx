@@ -65,8 +65,12 @@ const BureaucracyRanking = () => {
       }
       throw new Error('Unexpected word-count response');
     } catch (err) {
+      if (axios.isAxiosError(err) && err.response?.status === 429) {
+        console.warn('Rate-limited while fetching word count for', slug);
+        return 0; // API throttled – treat as 0 so we do not inject random noise
+      }
       console.warn('Word count fallback for', slug, err);
-      return Math.floor(Math.random() * 300000) + 50000; // random mock
+      return 0;
     }
   };
 
@@ -83,8 +87,12 @@ const BureaucracyRanking = () => {
       }
       throw new Error('Unexpected change-count response');
     } catch (err) {
+      if (axios.isAxiosError(err) && err.response?.status === 429) {
+        console.warn('Rate-limited while fetching change count for', slug);
+        return 0;
+      }
       console.warn('Change count fallback for', slug, err);
-      return Math.floor(Math.random() * 200000) + 10000; // random mock
+      return 0;
     }
   };
 
@@ -95,30 +103,29 @@ const BureaucracyRanking = () => {
       const agenciesRes = await axios.get('/api/admin/v1/agencies.json');
       const agencies: Agency[] = agenciesRes.data.agencies || [];
 
-      // To avoid throttling the API with hundreds of parallel requests, limit to first 50 agencies.
-      const limited = agencies.slice(0, 50);
+      // Limit to 30 agencies to stay under eCFR rate-limits
+      const limited = agencies.slice(0, 30);
 
-      // Fetch counts in parallel for each agency (2 requests each)
-      const scorePromises = limited.map(async (a): Promise<AgencyScore> => {
-        const [wordCount, changeCount] = await Promise.all([
-          fetchWordCount(a.slug),
-          fetchChangeCount(a.slug),
-        ]);
-        return {
+      const scoresUnsorted: AgencyScore[] = [];
+
+      // Sequentially fetch to avoid burst traffic (2 calls per agency)
+      for (const a of limited) {
+        const wordCount = await fetchWordCount(a.slug);
+        const changeCount = await fetchChangeCount(a.slug);
+        scoresUnsorted.push({
           agency: a.display_name ?? a.name,
           slug: a.slug,
           wordCount,
           changeCount,
           score: wordCount + changeCount,
-        };
-      });
+        });
+      }
 
-      const scoresUnsorted = await Promise.all(scorePromises);
       const sorted = scoresUnsorted.sort((a, b) => b.score - a.score);
       setScores(sorted);
     } catch (err) {
       console.error('Error calculating bureaucracy scores', err);
-      setApiError('Could not compute bureaucracy ranking. Showing mock data.');
+      setApiError('Could not compute bureaucracy ranking due to API limits. Some counts may be zero.');
       setUseMock(true);
       setScores(MOCK_SCORES);
     } finally {
