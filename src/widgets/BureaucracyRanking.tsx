@@ -59,8 +59,10 @@ const BureaucracyRanking = () => {
       });
       // When the API returns `{ count: X }`
       if (res.data && typeof res.data.count === 'number') return res.data.count;
-      // Some versions of the API return `{ meta: { total_count: X } }`
-      if (res.data?.meta?.total_count) return res.data.meta.total_count;
+      // Some versions of the API return `{ meta: { total_count: X } }` where total_count may be string
+      if (res.data?.meta?.total_count !== undefined) {
+        return Number(res.data.meta.total_count);
+      }
       throw new Error('Unexpected word-count response');
     } catch (err) {
       console.warn('Word count fallback for', slug, err);
@@ -77,7 +79,7 @@ const BureaucracyRanking = () => {
         },
       });
       if (res.data && res.data.dates) {
-        return Object.values(res.data.dates).reduce((sum: number, v) => sum + (v as number), 0);
+        return Object.values(res.data.dates).reduce((sum: number, v) => sum + Number(v), 0);
       }
       throw new Error('Unexpected change-count response');
     } catch (err) {
