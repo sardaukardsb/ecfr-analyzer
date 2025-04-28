@@ -96,6 +96,25 @@ const BureaucracyRanking = () => {
     }
   };
 
+  const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  const attemptRetry = async <T,>(fn: () => Promise<T>, maxRetries = 2): Promise<T> => {
+    let tryNum = 0;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      try {
+        return await fn();
+      } catch (e) {
+        if (axios.isAxiosError(e) && e.response?.status === 429 && tryNum < maxRetries) {
+          tryNum += 1;
+          await delay(500 * tryNum);
+          continue;
+        }
+        throw e;
+      }
+    }
+  };
+
   const calculateScores = async () => {
     setLoading(true);
     setApiError(null);
@@ -103,29 +122,37 @@ const BureaucracyRanking = () => {
       const agenciesRes = await axios.get('/api/admin/v1/agencies.json');
       const agencies: Agency[] = agenciesRes.data.agencies || [];
 
-      // Limit to 30 agencies to stay under eCFR rate-limits
-      const limited = agencies.slice(0, 30);
+      const MAX_AGENCIES = 50; // try to show more while respecting rate-limits
+      const limited = agencies.slice(0, MAX_AGENCIES);
+
+      const CONCURRENCY = 5; // how many agencies to process at once
 
       const scoresUnsorted: AgencyScore[] = [];
 
-      // Sequentially fetch to avoid burst traffic (2 calls per agency)
-      for (const a of limited) {
-        const wordCount = await fetchWordCount(a.slug);
-        const changeCount = await fetchChangeCount(a.slug);
-        scoresUnsorted.push({
-          agency: a.display_name ?? a.name,
-          slug: a.slug,
-          wordCount,
-          changeCount,
-          score: wordCount + changeCount,
-        });
+      // Chunk agencies to respect concurrency limit
+      for (let i = 0; i < limited.length; i += CONCURRENCY) {
+        const batch = limited.slice(i, i + CONCURRENCY);
+
+        const batchResults = await Promise.all(batch.map(async (a) => {
+          const wordCount = await attemptRetry(() => fetchWordCount(a.slug));
+          const changeCount = await attemptRetry(() => fetchChangeCount(a.slug));
+          return {
+            agency: a.display_name ?? a.name,
+            slug: a.slug,
+            wordCount,
+            changeCount,
+            score: wordCount + changeCount,
+          } as AgencyScore;
+        }));
+
+        scoresUnsorted.push(...batchResults);
       }
 
       const sorted = scoresUnsorted.sort((a, b) => b.score - a.score);
       setScores(sorted);
     } catch (err) {
       console.error('Error calculating bureaucracy scores', err);
-      setApiError('Could not compute bureaucracy ranking due to API limits. Some counts may be zero.');
+      setApiError('Could not compute full ranking – API limits reached. Partial data shown.');
       setUseMock(true);
       setScores(MOCK_SCORES);
     } finally {
